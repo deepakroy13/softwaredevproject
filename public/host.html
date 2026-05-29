@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Host · QuizArcade</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .host-grid { display:grid; grid-template-columns: 1.3fr 1fr; gap:24px; align-items:start; }
+    @media (max-width: 900px){ .host-grid{ grid-template-columns:1fr; } }
+    .choice-row { display:grid; grid-template-columns: 40px 1fr 110px; gap:10px; align-items:center; margin-bottom:10px; }
+    .choice-row .glyph { display:grid; place-items:center; height:46px; border-radius:10px; font-size:1.1rem; font-weight:800; color:#fff; }
+    .correct-toggle { font-family:var(--font-display); font-weight:700; font-size:.8rem; cursor:pointer; border:2px solid var(--border); border-radius:10px; background:rgba(0,0,0,.25); color:var(--text-muted); height:46px; }
+    .correct-toggle.on { background:var(--good); color:#04261a; border-color:var(--good); }
+    .qitem { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; background:var(--surface-2); border:2px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
+    .qitem .qmeta { font-size:.8rem; color:var(--text-muted); margin-top:4px; }
+    .ctrl-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .player-row { display:grid; grid-template-columns: 1fr auto auto; gap:10px; align-items:center; background:var(--surface-2); border:2px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:8px; }
+    .dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; }
+    .state-pill { font-family:var(--font-display); font-weight:800; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- SETUP -->
+    <div id="setup" class="banner" style="display:flex; flex-wrap:wrap; gap:28px; justify-content:space-between; align-items:center;">
+      <div style="flex:1; min-width:280px;">
+        <div class="eyebrow">Host console</div>
+        <h1 style="margin:12px 0 8px;">Run the show.</h1>
+        <p class="muted" style="max-width:520px;">Spin up a fresh room or reconnect to an existing PIN, then build your questions and go live.</p>
+      </div>
+      <div class="stack" style="min-width:260px;">
+        <button class="btn btn-primary" id="createBtn">⚡ Create New Room</button>
+        <div class="row" style="gap:10px;">
+          <input class="pin-input" id="joinPin" placeholder="PIN" maxlength="6" style="flex:1;" />
+          <button class="btn btn-ghost" id="joinBtn">Reconnect</button>
+        </div>
+        <a href="/" class="btn btn-ghost" style="text-align:center;">🏠 Lobby</a>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="dashboard" class="hidden">
+      <div class="row between" style="margin:8px 0 24px;">
+        <div class="pin-pill">
+          <span class="lbl">Room PIN</span>
+          <span class="val" id="pinDisplay">----</span>
+        </div>
+        <div class="stack" style="align-items:flex-end; gap:8px;">
+          <span class="badge live" id="statePill"><span class="dot" style="background:var(--magenta)"></span><span class="state-pill">LOBBY</span></span>
+          <span class="muted" id="progressTxt">0 questions</span>
+        </div>
+      </div>
+
+      <div class="host-grid">
+        <!-- LEFT: builder + questions -->
+        <div class="stack">
+          <div class="card">
+            <h3 style="margin-bottom:16px;">➕ Add a question</h3>
+            <label class="field-label">Question</label>
+            <input id="qText" placeholder="e.g. What is the capital of India?" />
+
+            <div id="choicesWrap" style="margin-top:16px;"></div>
+            <button class="btn btn-ghost" id="addChoiceBtn" style="font-size:.85rem; padding:8px 14px;">+ Add choice</button>
+
+            <div class="row" style="margin-top:16px; gap:14px;">
+              <div style="flex:1; min-width:140px;">
+                <label class="field-label">Time limit</label>
+                <select id="qTime">
+                  <option value="10000">10 seconds</option>
+                  <option value="20000" selected>20 seconds</option>
+                  <option value="30000">30 seconds</option>
+                  <option value="60000">60 seconds</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="saveQBtn" style="width:100%; margin-top:18px;">Save question</button>
+            <p class="muted" style="font-size:.8rem; margin-top:8px;">Tap a shape's toggle to mark the correct answer.</p>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-bottom:14px;">📋 Questions <span class="muted" id="qCount">(0)</span></h3>
+            <div id="qList"><div class="empty">No questions yet — add one above.</div></div>
+          </div>
+        </div>
+
+        <!-- RIGHT: controls + players + leaderboard -->
+        <div class="stack">
+          <div class="card">
+            <h3 style="margin-bottom:16px;">🎛️ Game controls</h3>
+            <button class="btn btn-primary" id="startBtn" style="width:100%; margin-bottom:12px;">▶ Start quiz</button>
+            <div class="ctrl-grid">
+              <button class="btn btn-ghost" id="prevBtn">⟵ Prev</button>
+              <button class="btn btn-cyan" id="nextBtn">Next ⟶</button>
+              <button class="btn btn-magenta" id="revealBtn">👁 Reveal</button>
+              <button class="btn btn-danger" id="endBtn">⏹ End</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-bottom:14px;">👥 Players <span class="muted" id="pCount">(0)</span></h3>
+            <div id="playerList"><div class="empty">Waiting for players…</div></div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-bottom:14px;">🏆 Leaderboard</h3>
+            <div id="leaderboard" class="leaderboard"><div class="empty">No scores yet.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const socket = io();
+    let pin = '';
+    let choiceCount = 0;
+    let correctIndex = 0;
+
+    const $ = (id) => document.getElementById(id);
+    const setup = $('setup'), dashboard = $('dashboard');
+
+    /* ---------- choice builder ---------- */
+    function addChoice(value) {
+      if (choiceCount >= 4) { toast('Maximum 4 choices'); return; }
+      const i = choiceCount++;
+      const row = document.createElement('div');
+      row.className = 'choice-row';
+      row.dataset.index = i;
+      row.innerHTML = `
+        <div class="glyph opt-${i}">${SHAPES[i]}</div>
+        <input class="choice-input" placeholder="Choice ${i + 1}" value="${value || ''}" />
+        <button type="button" class="correct-toggle ${i === correctIndex ? 'on' : ''}">${i === correctIndex ? '✓ Correct' : 'Correct?'}</button>`;
+      row.querySelector('.correct-toggle').addEventListener('click', () => {
+        correctIndex = i;
+        document.querySelectorAll('.correct-toggle').forEach((b, idx) => {
+          b.classList.toggle('on', idx === correctIndex);
+          b.textContent = idx === correctIndex ? '✓ Correct' : 'Correct?';
+        });
+      });
+      $('choicesWrap').appendChild(row);
+    }
+    function resetBuilder() {
+      $('choicesWrap').innerHTML = ''; choiceCount = 0; correctIndex = 0;
+      $('qText').value = '';
+      addChoice(); addChoice();
+    }
+    $('addChoiceBtn').addEventListener('click', () => addChoice());
+
+    /* ---------- setup actions ---------- */
+    $('createBtn').addEventListener('click', () => socket.emit('host:create'));
+    $('joinBtn').addEventListener('click', () => {
+      const p = $('joinPin').value.trim();
+      if (!p) return toast('Enter a PIN');
+      socket.emit('host:join', { roomPin: p });
+    });
+
+    function enterDashboard(roomPin) {
+      pin = roomPin;
+      $('pinDisplay').textContent = roomPin;
+      setup.classList.add('hidden');
+      dashboard.classList.remove('hidden');
+      resetBuilder();
+    }
+
+    socket.on('host:created', ({ roomPin }) => { enterDashboard(roomPin); toast('Room ' + roomPin + ' created', 'good'); });
+    socket.on('host:joined', ({ roomPin }) => { enterDashboard(roomPin); toast('Reconnected to ' + roomPin, 'good'); });
+
+    /* ---------- save / delete questions ---------- */
+    $('saveQBtn').addEventListener('click', () => {
+      const text = $('qText').value.trim();
+      const choices = [...document.querySelectorAll('.choice-input')].map(i => i.value.trim()).filter(Boolean);
+      if (!text) return toast('Enter the question text');
+      if (choices.length < 2) return toast('Add at least 2 non-empty choices');
+      socket.emit('host:addQuestion', {
+        roomPin: pin,
+        question: { question: text, choices, correctOption: correctIndex, timeLimit: Number($('qTime').value) }
+      });
+      resetBuilder();
+    });
+
+    socket.on('host:questions', (questions) => {
+      $('qCount').textContent = `(${questions.length})`;
+      $('progressTxt').textContent = `${questions.length} question${questions.length === 1 ? '' : 's'}`;
+      const list = $('qList');
+      if (!questions.length) { list.innerHTML = '<div class="empty">No questions yet — add one above.</div>'; return; }
+      list.innerHTML = questions.map(q => `
+        <div class="qitem">
+          <div>
+            <strong>Q${q.index + 1}. ${escapeHtml(q.question)}</strong>
+            <div class="qmeta">✓ ${escapeHtml(q.choices[q.correctOption] || '?')} · ${q.timeLimit / 1000}s · ${q.choices.length} choices</div>
+          </div>
+          <button class="btn btn-ghost" style="padding:6px 12px; font-size:.8rem;" onclick="delQ(${q.index})">🗑</button>
+        </div>`).join('');
+    });
+    function delQ(i) { socket.emit('host:deleteQuestion', { roomPin: pin, index: i }); }
+
+    /* ---------- game controls ---------- */
+    $('startBtn').addEventListener('click', () => socket.emit('host:start', { roomPin: pin }));
+    $('nextBtn').addEventListener('click', () => socket.emit('host:next', { roomPin: pin }));
+    $('prevBtn').addEventListener('click', () => socket.emit('host:prev', { roomPin: pin }));
+    $('revealBtn').addEventListener('click', () => socket.emit('host:reveal', { roomPin: pin }));
+    $('endBtn').addEventListener('click', () => { if (confirm('End the quiz for everyone?')) socket.emit('host:end', { roomPin: pin }); });
+
+    /* ---------- live state ---------- */
+    const STATE_COLORS = { Lobby: 'var(--magenta)', Question: 'var(--cyan)', Reveal: 'var(--brand)', Ended: 'var(--good)' };
+    socket.on('state', (s) => {
+      $('statePill').querySelector('.dot').style.background = STATE_COLORS[s.currentState] || 'var(--magenta)';
+      $('statePill').querySelector('.state-pill').textContent = s.currentState.toUpperCase();
+      if (s.currentState === 'Question' || s.currentState === 'Reveal') {
+        $('progressTxt').textContent = `Question ${s.currentSlideIndex + 1} of ${s.totalSlides}`;
+      }
+    });
+
+    socket.on('participants', (list) => {
+      $('pCount').textContent = `(${list.length})`;
+      const el = $('playerList');
+      if (!list.length) { el.innerHTML = '<div class="empty">Waiting for players…</div>'; return; }
+      el.innerHTML = list.map(p => `
+        <div class="player-row">
+          <span><span class="dot" style="background:${p.connected === false ? 'var(--text-muted)' : 'var(--good)'}"></span>${escapeHtml(p.nickname)}</span>
+          <span class="muted">${p.score} pts</span>
+          <button class="btn btn-danger" style="padding:6px 10px; font-size:.75rem;" onclick="kick('${p.socketId}')">Kick</button>
+        </div>`).join('');
+    });
+    function kick(id) { socket.emit('host:kick', { roomPin: pin, socketId: id }); }
+
+    socket.on('leaderboard', (list) => renderLeaderboard($('leaderboard'), list));
+    socket.on('ended', () => toast('Quiz ended 🎉', 'good'));
+    socket.on('errorMsg', (e) => toast(e.message || 'Something went wrong'));
+  </script>
+</body>
+</html>

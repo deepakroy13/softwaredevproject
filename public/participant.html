@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Play · QuizArcade</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { display:flex; flex-direction:column; min-height:100vh; }
+    .wrap { width:min(640px, 100% - 32px); margin:auto; padding:24px 0; position:relative; z-index:1; }
+    .view { display:none; }
+    .view.active { display:block; animation: pop .3s ease both; }
+
+    .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+    .topbar .me { font-family:var(--font-display); font-weight:800; }
+
+    .timer-track { height:14px; background:rgba(0,0,0,.4); border:2px solid var(--border); border-radius:999px; overflow:hidden; margin:18px 0; }
+    .timer-fill { height:100%; width:100%; background:linear-gradient(90deg,var(--good),var(--brand),var(--danger)); transition:width .25s linear; }
+    .timer-num { font-family:var(--font-display); font-weight:800; font-size:2.4rem; text-align:center; }
+
+    .mcq-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:8px; }
+    .mcq-btn {
+      border:3px solid #000; border-radius:18px; padding:26px 16px; min-height:108px;
+      font-family:var(--font-display); font-size:1.15rem; font-weight:800; color:#fff; cursor:pointer;
+      box-shadow:5px 5px 0 rgba(0,0,0,.55); display:flex; align-items:center; gap:12px; text-align:left;
+      transition:transform .08s, box-shadow .08s, opacity .2s;
+    }
+    .mcq-btn .shape { font-size:1.6rem; }
+    .mcq-btn:active { transform:translate(5px,5px); box-shadow:0 0 0 rgba(0,0,0,0); }
+    .mcq-btn:disabled { opacity:.4; cursor:default; }
+    .mcq-btn.dim { opacity:.28; }
+    .mcq-btn.win { outline:5px solid #fff; }
+
+    .big-emoji { font-size:4.5rem; line-height:1; }
+    .points-box { background:#000; border:2px solid var(--brand); border-radius:18px; padding:18px 26px; display:inline-block; margin:14px 0; }
+    .points-box .v { font-family:var(--font-display); font-size:2.6rem; font-weight:800; color:var(--brand); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- JOIN -->
+    <div id="view-join" class="view active">
+      <div class="card center">
+        <div class="eyebrow">Join a game</div>
+        <h2 style="margin:12px 0 22px;">Enter the arena</h2>
+        <div class="stack">
+          <input class="pin-input" id="pinInput" placeholder="PIN" maxlength="6" />
+          <input id="nameInput" placeholder="Your nickname" maxlength="18" style="text-align:center;" />
+          <button class="btn btn-primary" id="joinBtn" style="width:100%; padding:16px;">Join 🎮</button>
+        </div>
+        <a href="/" class="muted" style="display:inline-block; margin-top:18px; text-decoration:none;">← Back to lobby</a>
+      </div>
+    </div>
+
+    <!-- WAITING -->
+    <div id="view-waiting" class="view">
+      <div class="card center">
+        <div class="big-emoji" style="animation:floaty 2.2s ease-in-out infinite;">👀</div>
+        <h2 style="margin:14px 0 8px;">You're in, <span id="waitName">player</span>!</h2>
+        <p class="muted" id="waitMsg">Hang tight — the host will start the quiz soon.</p>
+      </div>
+      <div class="card" style="margin-top:18px;">
+        <h3 style="margin-bottom:12px;">🏆 Leaderboard</h3>
+        <div id="lb-wait" class="leaderboard"></div>
+      </div>
+    </div>
+
+    <!-- QUESTION -->
+    <div id="view-question" class="view">
+      <div class="topbar">
+        <span class="badge" id="qNum">Q1</span>
+        <span class="me" id="meScore">0 pts</span>
+      </div>
+      <div class="timer-num" id="timerNum">20</div>
+      <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+      <h2 id="qText" style="text-align:center; margin:8px 0 6px;">Question</h2>
+      <div class="mcq-grid" id="mcqGrid"></div>
+    </div>
+
+    <!-- RESULT -->
+    <div id="view-result" class="view">
+      <div class="card center">
+        <div class="big-emoji" id="resEmoji">✅</div>
+        <h1 id="resTitle" style="margin:10px 0;">Correct!</h1>
+        <div class="points-box"><div class="muted" style="font-size:.8rem; letter-spacing:.15em;">POINTS</div><div class="v" id="resPoints">+0</div></div>
+        <p class="muted" id="resRank">Calculating rank…</p>
+      </div>
+      <div class="card" style="margin-top:18px;">
+        <h3 style="margin-bottom:12px;">🏆 Leaderboard</h3>
+        <div id="lb-result" class="leaderboard"></div>
+      </div>
+    </div>
+
+    <!-- ENDED -->
+    <div id="view-ended" class="view">
+      <div class="card center">
+        <div class="big-emoji">🏁</div>
+        <h1 style="margin:8px 0;">Game over!</h1>
+        <p class="muted" id="finalRank">Thanks for playing.</p>
+      </div>
+      <div class="card" style="margin-top:18px;">
+        <h3 style="margin-bottom:12px;">🏆 Final standings</h3>
+        <div id="lb-ended" class="leaderboard"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const socket = io();
+    const $ = (id) => document.getElementById(id);
+    let pin = '', myName = '', myScore = 0, answered = false, timerId = null;
+
+    function show(id) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      $(id).classList.add('active');
+    }
+
+    /* ---------- join ---------- */
+    $('joinBtn').addEventListener('click', () => {
+      const p = $('pinInput').value.trim(), n = $('nameInput').value.trim();
+      if (!p || !n) return toast('Enter both PIN and nickname');
+      pin = p; myName = n;
+      socket.emit('player:join', { roomPin: p, nickname: n });
+    });
+
+    socket.on('player:joined', ({ nickname }) => {
+      myName = nickname;
+      $('waitName').textContent = nickname;
+      show('view-waiting');
+      toast('Joined! Waiting for host…', 'good');
+    });
+
+    /* ---------- question + timer ---------- */
+    socket.on('question', (q) => {
+      answered = false;
+      $('qNum').textContent = `Q${q.index + 1} / ${q.total}`;
+      $('qText').textContent = q.question;
+      $('meScore').textContent = myScore + ' pts';
+
+      const grid = $('mcqGrid');
+      grid.innerHTML = q.choices.map((c, i) => `
+        <button class="mcq-btn opt-${i}" data-i="${i}">
+          <span class="shape">${SHAPES[i]}</span><span>${escapeHtml(c)}</span>
+        </button>`).join('');
+      grid.querySelectorAll('.mcq-btn').forEach(btn =>
+        btn.addEventListener('click', () => submit(Number(btn.dataset.i)))
+      );
+
+      // countdown — account for time already elapsed if joined mid-question
+      const elapsed = q.startedAt ? Math.max(0, Date.now() - q.startedAt) : 0;
+      let remaining = Math.max(0, q.timeLimit - elapsed);
+      startTimer(remaining, q.timeLimit);
+      show('view-question');
+    });
+
+    function startTimer(remainingMs, totalMs) {
+      clearInterval(timerId);
+      const fill = $('timerFill'), num = $('timerNum');
+      function tick() {
+        const pct = Math.max(0, (remainingMs / totalMs) * 100);
+        fill.style.width = pct + '%';
+        num.textContent = Math.ceil(remainingMs / 1000);
+        if (remainingMs <= 0) {
+          clearInterval(timerId);
+          if (!answered) lockOut("Time's up!");
+        }
+        remainingMs -= 200;
+      }
+      tick();
+      timerId = setInterval(tick, 200);
+    }
+
+    function submit(i) {
+      if (answered) return;
+      answered = true;
+      clearInterval(timerId);
+      socket.emit('player:answer', { roomPin: pin, selectedOption: i });
+      // local feedback while we wait for the server result
+      document.querySelectorAll('.mcq-btn').forEach((b, idx) => {
+        b.disabled = true;
+        if (idx !== i) b.classList.add('dim');
+      });
+      $('timerNum').textContent = '✓';
+    }
+
+    function lockOut(msg) {
+      answered = true;
+      document.querySelectorAll('.mcq-btn').forEach(b => b.disabled = true);
+      $('waitMsg').textContent = msg + ' Waiting for the next question…';
+      show('view-waiting');
+    }
+
+    socket.on('answerResult', (r) => {
+      myScore = r.totalScore;
+      $('resEmoji').textContent = r.isCorrect ? '✅' : '❌';
+      $('resTitle').textContent = r.isCorrect ? 'Correct!' : 'Not quite';
+      $('resTitle').style.color = r.isCorrect ? 'var(--good)' : 'var(--danger)';
+      $('resPoints').textContent = '+' + (r.points || 0);
+      $('resRank').textContent = r.rank ? `You're #${r.rank} · ${r.totalScore} pts total` : `${r.totalScore} pts total`;
+      show('view-result');
+    });
+
+    /* ---------- reveal: highlight correct shape if still on question ---------- */
+    socket.on('reveal', ({ correctOption }) => {
+      const grid = $('mcqGrid');
+      grid.querySelectorAll('.mcq-btn').forEach((b, idx) => {
+        if (idx === correctOption) b.classList.add('win'); else b.classList.add('dim');
+      });
+    });
+
+    /* ---------- leaderboard everywhere ---------- */
+    socket.on('leaderboard', (list) => {
+      const mine = list.find(p => p.socketId === socket.id);
+      if (mine) { myScore = mine.score; $('meScore').textContent = myScore + ' pts'; }
+      [['lb-wait'], ['lb-result'], ['lb-ended']].forEach(([id]) =>
+        renderLeaderboard($(id), list, socket.id)
+      );
+    });
+
+    socket.on('ended', ({ leaderboard }) => {
+      clearInterval(timerId);
+      const mine = leaderboard.find(p => p.socketId === socket.id);
+      $('finalRank').textContent = mine ? `You finished #${mine.rank} with ${mine.score} pts` : 'Thanks for playing!';
+      renderLeaderboard($('lb-ended'), leaderboard, socket.id);
+      show('view-ended');
+    });
+
+    socket.on('kicked', (e) => {
+      clearInterval(timerId);
+      toast(e.message || 'You were removed');
+      setTimeout(() => { show('view-join'); }, 1500);
+    });
+
+    socket.on('errorMsg', (e) => toast(e.message || 'Error'));
+    socket.on('disconnect', () => toast('Connection lost — reconnecting…', 'info'));
+  </script>
+</body>
+</html>

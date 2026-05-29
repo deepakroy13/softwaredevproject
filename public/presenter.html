@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Presenter · QuizArcade</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .stage { min-height:100vh; display:flex; flex-direction:column; padding:28px clamp(16px,4vw,56px); position:relative; z-index:1; }
+    .stage-head { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:8px; flex-wrap:wrap; }
+    .view { display:none; }
+    .view.active { display:block; animation: pop .35s ease both; }
+
+    .q-big { font-size:clamp(2rem,4.5vw,3.6rem); font-weight:800; text-align:center; margin:18px 0 26px; line-height:1.1; }
+    .timer-track { height:18px; background:rgba(0,0,0,.4); border:2px solid var(--border); border-radius:999px; overflow:hidden; max-width:720px; margin:0 auto 26px; }
+    .timer-fill { height:100%; background:linear-gradient(90deg,var(--good),var(--brand),var(--danger)); width:100%; transition:width .25s linear; }
+
+    .choices { display:grid; grid-template-columns:1fr 1fr; gap:18px; max-width:1100px; margin:0 auto; }
+    .choice {
+      border:3px solid #000; border-radius:20px; padding:26px 28px; color:#fff;
+      font-family:var(--font-display); font-weight:800; font-size:clamp(1.2rem,2.4vw,1.9rem);
+      display:flex; align-items:center; gap:18px; box-shadow:6px 6px 0 rgba(0,0,0,.5);
+      transition:opacity .3s, transform .2s;
+    }
+    .choice .shape { font-size:1.6em; }
+    .choice .count { margin-left:auto; font-size:.85em; background:rgba(0,0,0,.35); padding:4px 14px; border-radius:999px; }
+    .choice.dim { opacity:.3; }
+    .choice.win { outline:5px solid #fff; transform:scale(1.03); }
+
+    .splitcols { display:grid; grid-template-columns:1.5fr 1fr; gap:28px; align-items:start; }
+    @media (max-width: 920px){ .splitcols{ grid-template-columns:1fr; } .choices{ grid-template-columns:1fr; } }
+
+    .ctrl-bar { display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap; }
+
+    /* podium */
+    .podium { display:flex; justify-content:center; align-items:flex-end; gap:18px; margin:30px 0; }
+    .pod { text-align:center; background:var(--surface-2); border:2px solid var(--border); border-radius:16px 16px 0 0; padding:18px 22px; min-width:140px; }
+    .pod .nm { font-family:var(--font-display); font-weight:800; font-size:1.2rem; margin-bottom:4px; }
+    .pod .sc { color:var(--brand); font-weight:800; }
+    .pod.p1 { height:200px; border-color:var(--brand); }
+    .pod.p2 { height:160px; }
+    .pod.p3 { height:130px; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+
+    <!-- JOIN -->
+    <div id="view-join" class="view active" style="margin:auto; width:min(460px,100%);">
+      <div class="card center">
+        <div class="eyebrow">Presenter view</div>
+        <h2 style="margin:12px 0 20px;">Connect to a room</h2>
+        <div class="stack">
+          <input class="pin-input" id="pinInput" placeholder="PIN" maxlength="6" />
+          <button class="btn btn-cyan" id="joinBtn" style="width:100%; padding:16px;">Connect 📺</button>
+        </div>
+        <a href="/" class="muted" style="display:inline-block; margin-top:18px; text-decoration:none;">← Lobby</a>
+      </div>
+    </div>
+
+    <!-- WAITING -->
+    <div id="view-waiting" class="view" style="margin:auto; text-align:center;">
+      <div class="pin-pill" style="margin-bottom:26px;"><span class="lbl">Join at this PIN</span><span class="val" id="waitPin">----</span></div>
+      <h1 class="muted" style="animation:floaty 2.4s ease-in-out infinite;">Waiting for the host to start…</h1>
+      <p class="muted" id="waitCount" style="margin-top:18px;">0 players in the room</p>
+    </div>
+
+    <!-- LIVE -->
+    <div id="view-live" class="view">
+      <div class="stage-head">
+        <span class="badge live"><span class="dot" style="width:9px;height:9px;border-radius:50%;background:var(--magenta);display:inline-block;margin-right:6px;"></span><span id="liveState">QUESTION</span></span>
+        <span class="badge" id="qProgress">Q1 / 1</span>
+        <span class="badge good" id="answeredBadge">0 answered</span>
+      </div>
+
+      <div class="splitcols">
+        <div>
+          <h1 class="q-big" id="qText">Question</h1>
+          <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+          <div class="choices" id="choices"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:14px;">🏆 Leaderboard</h3>
+          <div id="leaderboard" class="leaderboard"></div>
+        </div>
+      </div>
+
+      <div class="ctrl-bar">
+        <button class="btn btn-ghost" id="prevBtn">⟵ Prev</button>
+        <button class="btn btn-magenta" id="revealBtn">👁 Reveal answer</button>
+        <button class="btn btn-cyan" id="nextBtn">Next ⟶</button>
+      </div>
+    </div>
+
+    <!-- ENDED -->
+    <div id="view-ended" class="view" style="text-align:center; margin:auto;">
+      <div class="eyebrow">Final results</div>
+      <h1 style="margin:10px 0;">🏆 Champions</h1>
+      <div class="podium" id="podium"></div>
+      <div class="card" style="max-width:600px; margin:0 auto;">
+        <div id="lb-ended" class="leaderboard"></div>
+      </div>
+      <div class="ctrl-bar"><a href="/" class="btn btn-ghost">🏠 Lobby</a></div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+  <script src="common.js"></script>
+  <script>
+    const socket = io();
+    const $ = (id) => document.getElementById(id);
+    let pin = '', timerId = null, lastChoices = [], totalPlayers = 0;
+
+    function show(id) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      $(id).classList.add('active');
+    }
+
+    $('joinBtn').addEventListener('click', () => {
+      const p = $('pinInput').value.trim();
+      if (!p) return toast('Enter a PIN');
+      pin = p;
+      socket.emit('presenter:join', { roomPin: p });
+    });
+
+    socket.on('presenter:joined', ({ roomPin, state }) => {
+      pin = roomPin;
+      $('waitPin').textContent = roomPin;
+      applyState(state);
+      if (state.currentState === 'Lobby') show('view-waiting');
+    });
+
+    $('nextBtn').addEventListener('click', () => socket.emit('presenter:next', { roomPin: pin }));
+    $('prevBtn').addEventListener('click', () => socket.emit('presenter:prev', { roomPin: pin }));
+    $('revealBtn').addEventListener('click', () => socket.emit('presenter:reveal', { roomPin: pin }));
+
+    function renderChoices(choices) {
+      lastChoices = choices;
+      $('choices').innerHTML = choices.map((c, i) => `
+        <div class="choice opt-${i}" data-i="${i}">
+          <span class="shape">${SHAPES[i]}</span><span>${escapeHtml(c)}</span>
+          <span class="count" id="cnt-${i}">0</span>
+        </div>`).join('');
+    }
+
+    function startTimer(remainingMs, totalMs) {
+      clearInterval(timerId);
+      const fill = $('timerFill');
+      function tick() {
+        fill.style.width = Math.max(0, (remainingMs / totalMs) * 100) + '%';
+        if (remainingMs <= 0) clearInterval(timerId);
+        remainingMs -= 200;
+      }
+      tick();
+      timerId = setInterval(tick, 200);
+    }
+
+    socket.on('question', (q) => {
+      $('liveState').textContent = 'QUESTION';
+      $('qProgress').textContent = `Q${q.index + 1} / ${q.total}`;
+      $('qText').textContent = q.question;
+      $('answeredBadge').textContent = '0 answered';
+      renderChoices(q.choices);
+      const elapsed = q.startedAt ? Math.max(0, Date.now() - q.startedAt) : 0;
+      startTimer(Math.max(0, q.timeLimit - elapsed), q.timeLimit);
+      show('view-live');
+    });
+
+    socket.on('answerStats', ({ answered, total }) => {
+      totalPlayers = total;
+      $('answeredBadge').textContent = `${answered} / ${total} answered`;
+    });
+
+    socket.on('reveal', ({ correctOption, counts }) => {
+      clearInterval(timerId);
+      $('liveState').textContent = 'REVEAL';
+      document.querySelectorAll('.choice').forEach((el, i) => {
+        if (i === correctOption) el.classList.add('win'); else el.classList.add('dim');
+        const cnt = $('cnt-' + i);
+        if (cnt && counts) cnt.textContent = counts[i] || 0;
+      });
+    });
+
+    socket.on('leaderboard', (list) => renderLeaderboard($('leaderboard'), list));
+    socket.on('participants', (list) => {
+      $('waitCount').textContent = `${list.length} player${list.length === 1 ? '' : 's'} in the room`;
+    });
+
+    function applyState(s) {
+      $('qProgress').textContent = `Q${s.currentSlideIndex + 1} / ${s.totalSlides}`;
+      if (s.participants) $('waitCount').textContent = `${s.participants.length} players in the room`;
+      if (s.slide && (s.currentState === 'Question' || s.currentState === 'Reveal')) {
+        $('qText').textContent = s.slide.question;
+        renderChoices(s.slide.choices);
+        show('view-live');
+      } else if (s.currentState === 'Ended') {
+        show('view-ended');
+      }
+      if (s.participants) renderLeaderboard($('leaderboard'), s.participants);
+    }
+    socket.on('state', (s) => { if (s.currentState === 'Lobby') $('waitPin').textContent = s.roomPin; });
+
+    socket.on('ended', ({ leaderboard }) => {
+      clearInterval(timerId);
+      const top = leaderboard.slice(0, 3);
+      const order = [top[1], top[0], top[2]].filter(Boolean); // 2nd, 1st, 3rd visual order
+      const rankClass = (p) => (p.rank === 1 ? 'p1' : p.rank === 2 ? 'p2' : 'p3');
+      $('podium').innerHTML = order.map(p => `
+        <div class="pod ${rankClass(p)}">
+          <div class="nm">${escapeHtml(p.nickname)}</div>
+          <div class="sc">${p.score} pts</div>
+          <div class="muted">#${p.rank}</div>
+        </div>`).join('');
+      renderLeaderboard($('lb-ended'), leaderboard);
+      show('view-ended');
+    });
+
+    socket.on('errorMsg', (e) => toast(e.message || 'Error'));
+  </script>
+</body>
+</html>
